@@ -3,9 +3,15 @@
 #   make spoofing capabilities
 #   make aircrack capabilities
 #   make tshark capabilities            -> wirescan.py
+#   make nmap udp scan
+#   make argparse work
+#   
+#   make 
+# allow the program to automatically detect ip address
+# moreover, allow the program to detect the netmask to list posssible scan addresses
+
 #
-#
-#--------------------------------------------------------------------------#
+#-----------------------------------[ MODULES ]-----------------------------------#
 
 
 # running the scan commands
@@ -14,37 +20,135 @@ from subprocess import run, Popen
 # for parsing scan outputs
 from re import findall, search
 
-# for caching the contents of the hosts
-from pickle import dump, load
 
-# change to your specified interface
-IFACE = "wlp0s20f0u1"
-MYIP = "192.168.1.16"
 
-#--------------------------------------------------------------------------#
+
+
+#-----------------------------------[ CLI ]-----------------------------------#
+
+
+#
+#   -h        prints this information
+#   -l        does a host lookup
+
+
+
+    # program desc
+# parser = argparse.ArgumentParser(
+#     prog="NmapScan",
+#     description="A tool to scan networks and systems for open ports and other data.",
+#     usage='%(prog)s [options] <destination>'
+# )
+# 
+# # destination
+# parser.add_argument("destination", type=str, help="the destination address for the scan")
+# 
+# # options  
+# parser.add_argument("-l", "--hostscan", type=str, help="perform a system scan on LAN");
+# 
+# parser.add_argument("-h", "--help", type=int, help="displays this message") #? 
+# 
+# args = parser.parse_args()
+# 
+# print(
+#     f"\ndestination: {args.destination}\nhostscan: {args.l}\n{args.help}"
+# )
+# 
+# args = parser.parse_args()
+# 
+# print(args) 
+# 
+# exit(0) 
+
+
+
+
+ip_color = "\u001b[1;38;5;162m"
+proto_color = "\u001b[1;38;5;111m"
+num_color = "\u001b[1;38;5;9m"
+bar_color = "\u001b[1;38;5;162m"
+g_color = "\u001b[m"
+g_color = "\u001b[m"
+g_color = "\u001b[m"
+cl = "\u001b[m"
+bc = "\u001b[1;37m"
+
+#-----------------------------------[ HOST ]-----------------------------------#
+
+
+
+
+
+class File:
+    def __init__(self, file, length, content, location = None):
+        self.file = file
+        self.content = content
+        self.length = length
+        self.location = location
+
+class Request:
+    def __init__(self, method, file):
+        self.method = method
+        self.file = file
+        
 
 
 # defines a port object
 class Port:
-    def __init__(self, protocol: str, service: str):
+    def __init__(self, host, protocol: str, service: str):
+        self.host = host
         self.proto = protocol
         self.service = service
-        self.traffic = {
-            "sent": [],
-            "rcvd": [],
-        }
-    
+        
+        self.inbound_sessions = []
+        self.outbound_sessions = []
+
+
+    # makes a string representation of all of the inbound sessions found on the port
+    def inbound(self):
+        i_str = "INBOUND: "
+        if len(self.inbound_sessions) > 0:
+            for sesh in self.inbound_sessions:
+                if sesh.protocol == "HTTP":
+                    i_str = f"{i_str}\n{self.proto}{sesh.get_http(self.host)}"
+                else:
+                    i_str = f"{i_str}\n\n{sesh.get_sum(self.host)}"
+
+            i_str = f"{i_str}\n"
             
+        else:
+            i_str = f"{i_str}None"
+    
+        return i_str
+
+    
+#     def outbound(self):
+#         o_str = "OUTBOUND: "
+#         if len(self.outbound_sessions) > 0:
+#             for sesh in self.outbound_sessions:
+#                 if sesh.protocol == "HTTP":
+#                     o_str = f"{o_str}\n\n{sesh.get_http(self.host)}"
+#                 else:
+#                     o_str = f"{o_str}\n\n{sesh.get_sum(self.host)}"
+# 
+#             o_str = f"{o_str}\n"
+# 
+#         else:
+#             o_str = f"{o_str}None"
+# 
+#         return o_str
+
+
 
 # defines a host that is up on the network
 class Host:
-    def __init__(self, ipaddr: str):
+    def __init__(self, ipaddr: str, macaddr: str = ""):
     
         # ip address of the host
         self.ip: str = ipaddr
 
         # mac address of the host
-        self.mac: str = ""
+        self.mac = macaddr
         self.vendor: str = ""
         
         # operating system of the host
@@ -62,31 +166,50 @@ class Host:
         # tells whether the host can be a suitable zombie
         self.zombie = False 
 
-        self.traffic = {
-            "sent": [],
-            "recieved": [],
-        }
 
+        # TODO for future development with wireshark incorperated scan
+        self.inbound = {}
+        self.outbound = {}
+        
 
     # gets the mac address of the target via arp query
     def get_mac(self):
+        if self.mac == "":
+            command = ["arping", "-f", self.ip]
+            result = run(command, capture_output=True, text=True)
 
-        command = ["arping", "-f", self.ip]
-        result = run(command, capture_output=True, text=True)
+            match_mac = findall(r"\[([\S]{17})\]", result.stdout)
+            
+            ################### debug
+            if match_mac:
+                self.mac = match_mac[0]
+            else:
+                print(f"couldnt arp mac address... {result.stdout}")
 
-        match_mac = findall(r"\[([\S]{17})\]", result.stdout)
-        
-        ################### debug
-        if match_mac:
-            self.mac = match_mac[0]
-        else:
-            print(f"couldnt arp mac address... {result.stdout}")
+
+
+    # TODO:                                                 TEST
+    # gets the service information on all open ports
+    def get_service_version(self):
+        if len(self.ports.keys()) > 0:
+
+            # serialize all ports for arguments
+            port_str = ",".join([str(port) for port in self.ports.keys()])
+            
+            command = ["nmap", "-sS" "-p", port_str, self.ip]
+            result = run(command, capture_output=True, text=True)
+
+            print(result)  # TEST
+                
         
     # scan for open TCP ports
     def port_sweep(self):
 
-        command = ["nmap", "-Pn", "-v", "-O", "-sS", "-r", self.ip]
+        command = ["nmap", "-Pn", "-v", "-O", "-sS", "", self.ip]
         result = run(command, capture_output=True, text=True)
+
+        if result.stderr:
+            print(f"PORTSWEEP ERROR: \n\n{result.stderr}\n\n")
 
         matches = findall(r"([\d]{1,5})\/([\w]{3})\s*?open\s*?([\s\S]*?)\n", result.stdout)
         dev_type = search(r"Device\stype:\s([\S]*?)(?:\s|\\n|\n)", result.stdout)
@@ -119,142 +242,66 @@ class Host:
 
     # format the host's results
     def __str__(self):
-        port_str = "\n"
+        port_str = "\n==================================\n\n"
         
+        out_ports = {}
+        in_ports = {}
         if len(self.ports):
             for num, port in self.ports.items():
-                port_str = f"{port_str}\n{num}/{port.proto}: {port.service}"
+                port_str = f"{port_str}"
+                
+                if len(port.inbound_sessions) > 0:
+                    if num in in_ports.keys():
+                    
+                        in_ports[num].append(port.inbound_sessions)
+                    else:
+                        in_ports[num] = [port.inbound_sessions]
+                        
+                if len(port.outbound_sessions) > 0:
+                    if num in out_ports.keys():
+                        
+                        out_ports[num].append(port.outbound_sessions)
+                    else:
+                        out_ports[num] = [port.outbound_sessions]
+
+
+               
 
             else:
-                port_str = f"{port_str}\n"
+
+                port_str = f"{port_str}INBOUND: \n"
+                
+                for port, sessions in in_ports.items():
+                    
+                    for sesh in sessions:
+                        for s in sesh:
+                            if s.protocol == "HTTP":
+                                port_str = f"{port_str}{self.ports[port].proto} {s.get_http(self.ip)}\n"
+                            else:
+                                port_str = f"{port_str}{self.ports[port].proto} {s.get_sum(self.ip)}\n"
+            
+                port_str = f"{port_str}==================================\nOUTBOUND: \n"
+                
+                for port, sessions in out_ports.items():
+
+                    for sesh in sessions:
+                        for s in sesh:
+                            if s.protocol == "HTTP":
+                                port_str = f"{port_str}{self.ports[port].proto} {s.get_http(self.ip)}\n"
+                            else:
+                                port_str = f"{port_str}{self.ports[port].proto} {s.get_sum(self.ip)}\n"
+                                
         else:
             port_str = "No Open Ports"
 
         return f"""
-----------------------------------------------
-HOST:       IP: {self.ip}      MAC: {self.mac}
-
-DEV DETAILS: 
-
-    VENDOR: {self.vendor}
-
-    TYPE: {self.OS['Device Type']}
-
-    OS: {self.OS['Running']}
-
-    ZOM: {self.zombie}
-    
-PORTS: {port_str}
+{bar_color}==================================
+HOST:       
+    IP: {ip_color}{self.ip}{cl}      
+    MAC: {self.mac}
+    PORTS: {port_str}
 
 """
 
 
-#--------------------------------------------------------------------------#
-
-
-# scanns for hosts that are up on a network
-# nmap -sn #.#.#.0/24
-def host_scan(ip_range) -> list:
-    command = ["nmap", "-sn", ip_range]
-
-    result = run(command, capture_output=True, text=True)
-
-    matches = findall(r"(?:[\d]{1,3}\.){3}\d{1,3}", result.stdout)
-    
-    return matches
-
-#--------------------------------------------------------------------------#
-
-
-# cache loaded hosts in host file
-def cache_hosts(hosts):
-    with open('scan_cache/Hosts.pkl', 'wb') as host_file:
-        dump(hosts, host_file)
-
-
-# load previously scanned hosts from the host cache    
-def load_hosts():
-    with open('scan_cache/Hosts.pkl', 'rb') as host_file:
-        return load(host_file)
-
-
-#--------------------------------------------------------------------------#
-
-
-# run main functionality if script is ran directly
-if __name__ == "__main__":    
-
-    Hosts = None
-
-    # attempt to load hosts
-    try:
-        assert Hosts
-        Hosts = load_hosts()
-
-        if Hosts:
-            print("Successfully loaded hosts from cache!")
-        
-    except:
-        # scan for hosts if loading 
-        # the cached hosts werent successful    
-        print("Couldnt load hosts cache, scanning again...\n")
-
-    
-        # gets a list of ip addresses
-        # of hosts ip addresses on the network
-        hosts_ips = host_scan("192.168.1.0/24")
-
-        # list of host objects    
-        Hosts: list = []
-
-        # add ip addresses to the list of hosts 
-        for ipaddr in hosts_ips:
-            if ipaddr != MYIP:
-                Hosts.append(Host(ipaddr))
-                print(f"found {ipaddr}")
-        else:
-            print("\n")
-            
-        # load the connected hosts
-        cache_hosts(Hosts)
-
-    # hosts have either been loaded from cache
-    # or they have been scanned again
-    finally:
-
-        # go through the hosts and perfome something
-        for host in Hosts:
-            print(f"########################  {host.ip} DATA  ########################")
-                
-            # scan tcp ports and get OS/MAC data
-            tcp_results = host.scan_TCP()
-            
-            # try:
-            #     host.collect_traffic()
-            # except Exception as e:
-            #     print(f"####################\nERROR{e}\n###################")
-            # else:
-            #     print(host.analyze_traffic())
-            
-            # display port scanning results
-            if len(host.ports):
-                # display port information    
-                for portnum, port in host.ports.items():
-                    print(f"{port.proto}  {port.service}   @   {host.ip}:{portnum}")
-                else:
-                    print("\n")
-            else:
-                print(f"{host.ip}: No Ports open\n")
-            
-            
-        else:
-            print("\n\n##############################################################\n")
-            ############## debug __str__ implementation
-            for host in Hosts:
-                print(host)
-
-            # cache the resulting hosts for future use
-            print("Caching scanned hosts and quiting...\n")
-            cache_hosts(Hosts)
-            print("\n\n##############################################################\n")
 
